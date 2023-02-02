@@ -3,11 +3,15 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class fileDateSorter {
 
@@ -39,6 +43,9 @@ public class fileDateSorter {
 			
 			File outputDir = getOutputDir(f);
 			
+			if(outputDir == null)
+				continue;
+			
 			try {
 				Files.move(f.toPath(), new File(outputDir, f.getName()).toPath(), StandardCopyOption.ATOMIC_MOVE);
 			} catch (IOException e) {
@@ -49,26 +56,44 @@ public class fileDateSorter {
 	
 	/***
 	 * Returns the File representation of the appropriate output directory of the given file
-	 * or creates one if the appropriate directory doesn't exist.
+	 * or creates one if the appropriate directory doesn't exist. Returns null if the creation
+	 * date couldn't be read. If the time of day of the creation date of file is earlier than
+	 * 4 am it will consider the file created on the day before, this is coded to use the current
+	 * local time zone.
 	 * 
-	 * @param file The file to find the appropriate outputDir for
-	 * @return The File representation of the appropriate outputDir
+	 * @param file The file to find the appropriate outputDir for.
+	 * @return The File representation of the appropriate outputDir or null if the creation date
+	 * of file couldn't be read.
 	 */
 	public static File getOutputDir(File file) {
-		Date date = getDate(file.getName());
+		Date date = getDate(file);
+		
+		if(date == null)
+			return null;
+		
+		Calendar.Builder builder = new Calendar.Builder();
+		Calendar cal = builder.build();
+		cal.setTime(date);
+		
+		if(cal.get(Calendar.HOUR_OF_DAY) < 4)
+			cal.add(Calendar.DAY_OF_MONTH, -1);
+		
+		cal.set(Calendar.HOUR_OF_DAY, 0);
+		cal.set(Calendar.MINUTE, 0);
+		cal.set(Calendar.SECOND, 0);
+		cal.set(Calendar.MILLISECOND, 0);
+		
+		date = cal.getTime();
 		
 		File outputDir = outputDirs.get(date);
 		
 		//If there is no outputDir for this date in outputDirs, make a new one and add it to outputDirs
 		if(outputDir == null) {
-			Calendar.Builder builder = new Calendar.Builder();
-			Calendar cal = builder.build();
-			cal.setTime(date);
-
-			outputDir = new File(cwd, String.format("%n-%n-%n",
-					cal.get(Calendar.DAY_OF_MONTH),
-					cal.get(Calendar.MONTH),
-					cal.get(Calendar.YEAR)).toString());
+			
+			outputDir = new File(cwd, 
+					cal.get(Calendar.DAY_OF_MONTH) + "-" +
+					(cal.get(Calendar.MONTH) + 1) + "-" +
+					cal.get(Calendar.YEAR));
 			
 			outputDir.mkdir();
 
@@ -79,38 +104,55 @@ public class fileDateSorter {
 	}
 	
 	/***
+	 * Gets the Date object representation of the creation date of the given file. Returns null if the creation date couldn't be read.
+	 * 
+	 * @param file
+	 * @return The Date representation of file's creation date or null if the creation date couldn't be read.
+	 */
+	public static Date getDate(File file) {
+		BasicFileAttributes attr;
+		
+		try {
+			attr = Files.readAttributes(file.toPath(), BasicFileAttributes.class);
+		} catch (IOException e) {
+			e.printStackTrace();
+			return null;
+		}
+		
+		return Date.from(attr.creationTime().toInstant());
+	}
+	
+	/***
 	 * Removes all directories from the files array and adds and valid output directories into the outputDirs HashMap<Date, File>.
 	 * A valid output directory is a folder who's name starts with a date in dd-mm-yyyy format.
 	 * 
 	 * @param files All the files and directories in the CWD.
 	 */
 	public static void removeDirs(ArrayList<File> files) {
-		for(File f : files) {
+		Iterator<File> itr = files.iterator();
+		while(itr.hasNext()) {
+			File f = itr.next();
 			if(!f.isDirectory())
 				continue;
 			
-			//if the directory starts with a date
-			if(f.getName().matches("^\\d{1,2}[\\W_]\\d{1,2}[\\W_]\\d{4}")) {
-				outputDirs.put(getDate(f.getName()), f);
-				files.remove(f);
+			Matcher m = Pattern.compile("^\\d{1,2}[\\W_]\\d{1,2}[\\W_]\\d{4}").matcher(f.getName());
+			
+			//If the folder name doesn't start with a name.
+			if(!m.find()) {
+				itr.remove();
+				continue;
 			}
+			
+			String[] dateValues = m.group().split("[\\W_]");
+			
+			Calendar.Builder calBuilder = new Calendar.Builder();
+			calBuilder.setDate(Integer.parseInt(dateValues[2]), Integer.parseInt(dateValues[1]) - 1, Integer.parseInt(dateValues[0]));
+			
+			Date date = calBuilder.build().getTime();
+			
+			outputDirs.put(date, f);
+			itr.remove();
 		}
-	}
-	
-	/***
-	 * Converts the date in the beginning of the file name into a Date object. File name must start with a date of the format dd-mm-yyyy,
-	 * this must be verified before the method call.
-	 * 
-	 * @param fileName The already verified name of the file.
-	 * @return The Date object representing the date
-	 */
-	public static Date getDate(String fileName) {
-		String[] dateValues = fileName.split("^\\d{1,2}[\\W_]\\d{1,2}[\\W_]\\d{4}")[0].split("[\\W_]");
-		
-		Calendar.Builder calBuilder = new Calendar.Builder();
-		calBuilder.setDate(Integer.parseInt(dateValues[2]), Integer.parseInt(dateValues[1]), Integer.parseInt(dateValues[0]));
-		
-		return calBuilder.build().getTime();
 	}
 	
 	/***
