@@ -91,9 +91,9 @@ public class fileDateSorter {
 		if(outputDir == null) {
 			
 			outputDir = new File(cwd, 
-					cal.get(Calendar.DAY_OF_MONTH) + "-" +
+					cal.get(Calendar.YEAR) + "-" +
 					(cal.get(Calendar.MONTH) + 1) + "-" +
-					cal.get(Calendar.YEAR));
+					cal.get(Calendar.DAY_OF_MONTH));
 			
 			outputDir.mkdir();
 
@@ -135,7 +135,7 @@ public class fileDateSorter {
 			if(!f.isDirectory())
 				continue;
 			
-			Matcher m = Pattern.compile("^\\d{1,2}[\\W_]\\d{1,2}[\\W_]\\d{4}").matcher(f.getName());
+			Matcher m = Pattern.compile("^\\d{4}[\\W_]\\d{1,2}[\\W_]\\d{1,2}").matcher(f.getName());
 			
 			//If the folder name doesn't start with a name.
 			if(!m.find()) {
